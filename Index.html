@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0"/>
+  <title>Pêche Le Pouliguen 🎣</title>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Pêche Pouliguen"/>
+  <meta name="theme-color" content="#020c18"/>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;700&display=swap" rel="stylesheet"/>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{min-height:100vh;background:linear-gradient(180deg,#020c18 0%,#041428 40%,#020c18 100%);font-family:'DM Sans','Segoe UI',sans-serif;color:#c0d8e8;padding-bottom:60px}
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+    .spin{animation:spin 2s linear infinite;display:inline-block}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+    .fade-in{animation:fadeIn 0.4s ease forwards}
+    input,button{font-family:inherit}
+    a{color:#4ecdc4}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect } = React;
+const LAT = 47.2714, LON = -2.4261;
+
+// ── Données SHOM officielles Le Pouliguen 2026 ──────────────
+// Source : © SHOM 2026 via Météo Consult Marine
+// Format : [date, BM1_h, BM1_m, BM1_haut, PM1_h, PM1_m, PM1_haut, coef1, BM2_h, BM2_m, BM2_haut, PM2_h, PM2_m, PM2_haut, coef2]
+const TIDES_SHOM = {
+  // JUIN 2026
+  "2026-06-01":{ex:[{t:"low",h:"00",m:"06",ht:1.40},{t:"high",h:"05",m:"50",ht:4.83,c:71},{t:"low",h:"12",m:"19",ht:1.47},{t:"high",h:"18",m:"02",ht:5.03,c:71}]},
+  "2026-06-02":{ex:[{t:"low",h:"00",m:"41",ht:1.41},{t:"high",h:"06",m:"21",ht:4.79,c:70},{t:"low",h:"12",m:"53",ht:1.54},{t:"high",h:"18",m:"35",ht:4.98,c:69}]},
+  "2026-06-03":{ex:[{t:"low",h:"01",m:"17",ht:1.44},{t:"high",h:"06",m:"53",ht:4.73,c:68},{t:"low",h:"13",m:"29",ht:1.62},{t:"high",h:"19",m:"09",ht:4.91,c:66}]},
+  "2026-06-04":{ex:[{t:"low",h:"01",m:"55",ht:1.50},{t:"high",h:"07",m:"28",ht:4.65,c:64},{t:"low",h:"14",m:"07",ht:1.72},{t:"high",h:"19",m:"46",ht:4.82,c:62}]},
+  "2026-06-05":{ex:[{t:"low",h:"02",m:"37",ht:1.58},{t:"high",h:"08",m:"08",ht:4.55,c:60},{t:"low",h:"14",m:"51",ht:1.83},{t:"high",h:"20",m:"28",ht:4.71,c:57}]},
+  "2026-06-06":{ex:[{t:"low",h:"03",m:"25",ht:1.68},{t:"high",h:"08",m:"55",ht:4.43,c:54},{t:"low",h:"15",m:"41",ht:1.95},{t:"high",h:"21",m:"17",ht:4.59,c:52}]},
+  "2026-06-07":{ex:[{t:"low",h:"04",m:"20",ht:1.79},{t:"high",h:"09",m:"51",ht:4.32,c:50},{t:"low",h:"16",m:"39",ht:2.06},{t:"high",h:"22",m:"13",ht:4.47,c:48}]},
+  "2026-06-08":{ex:[{t:"low",h:"05",m:"22",ht:1.88},{t:"high",h:"10",m:"55",ht:4.24,c:47},{t:"low",h:"17",m:"43",ht:2.13},{t:"high",h:"23",m:"15",ht:4.39,c:47}]},
+  "2026-06-09":{ex:[{t:"low",h:"06",m:"27",ht:1.93},{t:"high",h:"12",m:"00",ht:4.21,c:47},{t:"low",h:"18",m:"47",ht:2.14},{t:"high",h:"00",m:"16",ht:4.36,c:49}]},
+  "2026-06-10":{ex:[{t:"low",h:"07",m:"29",ht:1.91},{t:"high",h:"13",m:"02",ht:4.26,c:52},{t:"low",h:"19",m:"47",ht:2.08},{t:"high",h:"01",m:"16",ht:4.40,c:54}]},
+  "2026-06-11":{ex:[{t:"low",h:"08",m:"26",ht:1.82},{t:"high",h:"13",m:"59",ht:4.38,c:58},{t:"low",h:"20",m:"42",ht:1.96},{t:"high",h:"02",m:"12",ht:4.52,c:61}]},
+  "2026-06-12":{ex:[{t:"low",h:"09",m:"18",ht:1.68},{t:"high",h:"14",m:"51",ht:4.55,c:66},{t:"low",h:"21",m:"31",ht:1.80},{t:"high",h:"03",m:"03",ht:4.67,c:68}]},
+  "2026-06-13":{ex:[{t:"low",h:"10",m:"05",ht:1.51},{t:"high",h:"15",m:"38",ht:4.73,c:73},{t:"low",h:"22",m:"16",ht:1.62},{t:"high",h:"03",m:"50",ht:4.83,c:76}]},
+  "2026-06-14":{ex:[{t:"low",h:"10",m:"48",ht:1.33},{t:"high",h:"16",m:"21",ht:4.92,c:81},{t:"low",h:"22",m:"58",ht:1.43},{t:"high",h:"04",m:"33",ht:5.00,c:84}]},
+  "2026-06-15":{ex:[{t:"low",h:"11",m:"28",ht:1.16},{t:"high",h:"17",m:"01",ht:5.09,c:88},{t:"low",h:"23",m:"37",ht:1.25},{t:"high",h:"05",m:"13",ht:5.17,c:91}]},
+  "2026-06-16":{ex:[{t:"low",h:"12",m:"06",ht:1.01},{t:"high",h:"17",m:"39",ht:5.24,c:95},{t:"low",h:"00",m:"14",ht:1.09},{t:"high",h:"05",m:"51",ht:5.31,c:97}]},
+  "2026-06-17":{ex:[{t:"low",h:"12",m:"43",ht:0.90},{t:"high",h:"18",m:"16",ht:5.36,c:100},{t:"low",h:"00",m:"50",ht:0.97},{t:"high",h:"06",m:"28",ht:5.42,c:101}]},
+  "2026-06-18":{ex:[{t:"low",h:"13",m:"19",ht:0.84},{t:"high",h:"18",m:"52",ht:5.43,c:103},{t:"low",h:"01",m:"25",ht:0.89},{t:"high",h:"07",m:"04",ht:5.48,c:103}]},
+  "2026-06-19":{ex:[{t:"low",h:"13",m:"54",ht:0.82},{t:"high",h:"19",m:"27",ht:5.46,c:104},{t:"low",h:"02",m:"00",ht:0.87},{t:"high",h:"07",m:"39",ht:5.48,c:102}]},
+  "2026-06-20":{ex:[{t:"low",h:"14",m:"29",ht:0.85},{t:"high",h:"20",m:"02",ht:5.43,c:101},{t:"low",h:"02",m:"35",ht:0.90},{t:"high",h:"08",m:"14",ht:5.43,c:99}]},
+  "2026-06-21":{ex:[{t:"low",h:"15",m:"04",ht:0.94},{t:"high",h:"20",m:"38",ht:5.34,c:97},{t:"low",h:"03",m:"10",ht:0.98},{t:"high",h:"08",m:"50",ht:5.32,c:93}]},
+  "2026-06-22":{ex:[{t:"low",h:"15",m:"41",ht:1.08},{t:"high",h:"21",m:"16",ht:5.20,c:91},{t:"low",h:"03",m:"47",ht:1.12},{t:"high",h:"09",m:"28",ht:5.16,c:86}]},
+  "2026-06-23":{ex:[{t:"low",h:"16",m:"21",ht:1.27},{t:"high",h:"21",m:"57",ht:5.01,c:83},{t:"low",h:"04",m:"27",ht:1.31},{t:"high",h:"10",m:"10",ht:4.97,c:78}]},
+  "2026-06-24":{ex:[{t:"low",h:"17",m:"05",ht:1.51},{t:"high",h:"22",m:"43",ht:4.78,c:74},{t:"low",h:"05",m:"12",ht:1.54},{t:"high",h:"10",m:"57",ht:4.74,c:70}]},
+  "2026-06-25":{ex:[{t:"low",h:"17",m:"55",ht:1.77},{t:"high",h:"23",m:"35",ht:4.53,c:65},{t:"low",h:"06",m:"04",ht:1.79},{t:"high",h:"11",m:"52",ht:4.50,c:61}]},
+  "2026-06-26":{ex:[{t:"low",h:"18",m:"52",ht:2.01},{t:"high",h:"00",m:"35",ht:4.29,c:57},{t:"low",h:"07",m:"04",ht:2.02},{t:"high",h:"12",m:"53",ht:4.28,c:55}]},
+  "2026-06-27":{ex:[{t:"low",h:"19",m:"55",ht:2.20},{t:"high",h:"01",m:"40",ht:4.09,c:52},{t:"low",h:"08",m:"11",ht:2.19},{t:"high",h:"14",m:"00",ht:4.11,c:51}]},
+  "2026-06-28":{ex:[{t:"low",h:"21",m:"00",ht:2.30},{t:"high",h:"02",m:"47",ht:3.97,c:50},{t:"low",h:"09",m:"20",ht:2.28},{t:"high",h:"15",m:"08",ht:4.00,c:51}]},
+  "2026-06-29":{ex:[{t:"low",h:"22",m:"02",ht:2.30},{t:"high",h:"03",m:"51",ht:3.94,c:52},{t:"low",h:"10",m:"25",ht:2.27},{t:"high",h:"16",m:"12",ht:3.98,c:55}]},
+  "2026-06-30":{ex:[{t:"low",h:"22",m:"57",ht:2.22},{t:"high",h:"04",m:"47",ht:4.00,c:58},{t:"low",h:"11",m:"22",ht:2.18},{t:"high",h:"17",m:"08",ht:4.06,c:62}]},
+  // JUILLET 2026
+  "2026-07-01":{ex:[{t:"low",h:"23",m:"45",ht:2.07},{t:"high",h:"05",m:"36",ht:4.13,c:65},{t:"low",h:"12",m:"12",ht:2.04},{t:"high",h:"17",m:"57",ht:4.18,c:68}]},
+  "2026-07-02":{ex:[{t:"low",h:"00",m:"28",ht:1.90},{t:"high",h:"06",m:"20",ht:4.28,c:71},{t:"low",h:"12",m:"56",ht:1.88},{t:"high",h:"18",m:"40",ht:4.31,c:73}]},
+  "2026-07-03":{ex:[{t:"low",h:"01",m:"07",ht:1.73},{t:"high",h:"07",m:"01",ht:4.43,c:75},{t:"low",h:"13",m:"36",ht:1.72},{t:"high",h:"19",m:"20",ht:4.46,c:77}]},
+  "2026-07-04":{ex:[{t:"low",h:"01",m:"44",ht:1.57},{t:"high",h:"07",m:"40",ht:4.58,c:79},{t:"low",h:"14",m:"13",ht:1.57},{t:"high",h:"19",m:"58",ht:4.60,c:80}]},
+  "2026-07-05":{ex:[{t:"low",h:"02",m:"20",ht:1.44},{t:"high",h:"08",m:"18",ht:4.71,c:82},{t:"low",h:"14",m:"49",ht:1.44},{t:"high",h:"20",m:"35",ht:4.73,c:83}]},
+  "2026-07-06":{ex:[{t:"low",h:"02",m:"56",ht:1.33},{t:"high",h:"08",m:"55",ht:4.82,c:85},{t:"low",h:"15",m:"24",ht:1.33},{t:"high",h:"21",m:"11",ht:4.85,c:86}]},
+  "2026-07-07":{ex:[{t:"low",h:"03",m:"31",ht:1.25},{t:"high",h:"09",m:"32",ht:4.91,c:88},{t:"low",h:"15",m:"59",ht:1.25},{t:"high",h:"21",m:"47",ht:4.94,c:89}]},
+  "2026-07-08":{ex:[{t:"low",h:"04",m:"07",ht:1.20},{t:"high",h:"10",m:"09",ht:4.99,c:91},{t:"low",h:"16",m:"34",ht:1.19},{t:"high",h:"22",m:"23",ht:5.01,c:92}]},
+  "2026-07-09":{ex:[{t:"low",h:"04",m:"43",ht:1.16},{t:"high",h:"10",m:"47",ht:5.05,c:93},{t:"low",h:"17",m:"09",ht:1.15},{t:"high",h:"22",m:"59",ht:5.07,c:94}]},
+  "2026-07-10":{ex:[{t:"low",h:"05",m:"19",ht:1.14},{t:"high",h:"11",m:"25",ht:5.09,c:95},{t:"low",h:"17",m:"44",ht:1.13},{t:"high",h:"23",m:"36",ht:5.10,c:95}]},
+  "2026-07-11":{ex:[{t:"low",h:"05",m:"55",ht:1.14},{t:"high",h:"12",m:"04",ht:5.11,c:95},{t:"low",h:"18",m:"19",ht:1.13},{t:"high",h:"00",m:"13",ht:5.12,c:96}]},
+  "2026-07-12":{ex:[{t:"low",h:"06",m:"32",ht:1.15},{t:"high",h:"12",m:"43",ht:5.11,c:96},{t:"low",h:"18",m:"55",ht:1.14},{t:"high",h:"00",m:"51",ht:5.12,c:96}]},
+  "2026-07-13":{ex:[{t:"low",h:"07",m:"09",ht:1.18},{t:"high",h:"13",m:"23",ht:5.09,c:96},{t:"low",h:"19",m:"31",ht:1.17},{t:"high",h:"01",m:"29",ht:5.10,c:96}]},
+  "2026-07-14":{ex:[{t:"low",h:"07",m:"47",ht:1.22},{t:"high",h:"14",m:"04",ht:5.05,c:96},{t:"low",h:"20",m:"08",ht:1.21},{t:"high",h:"02",m:"08",ht:5.07,c:97}]},
+  "2026-07-15":{ex:[{t:"low",h:"08",m:"26",ht:1.28},{t:"high",h:"14",m:"46",ht:4.99,c:96},{t:"low",h:"20",m:"47",ht:1.27},{t:"high",h:"02",m:"48",ht:5.02,c:98}]},
+  "2026-07-16":{ex:[{t:"low",h:"09",m:"07",ht:1.36},{t:"high",h:"15",m:"30",ht:4.91,c:97},{t:"low",h:"21",m:"28",ht:1.35},{t:"high",h:"03",m:"30",ht:4.95,c:98}]},
+  "2026-07-17":{ex:[{t:"low",h:"09",m:"51",ht:1.46},{t:"high",h:"16",m:"17",ht:4.81,c:96},{t:"low",h:"22",m:"12",ht:1.45},{t:"high",h:"04",m:"15",ht:4.86,c:97}]},
+  "2026-07-18":{ex:[{t:"low",h:"10",m:"38",ht:1.59},{t:"high",h:"17",m:"08",ht:4.70,c:93},{t:"low",h:"23",m:"00",ht:1.57},{t:"high",h:"05",m:"03",ht:4.76,c:94}]},
+  "2026-07-19":{ex:[{t:"low",h:"11",m:"29",ht:1.73},{t:"high",h:"18",m:"02",ht:4.59,c:89},{t:"low",h:"23",m:"52",ht:1.70},{t:"high",h:"05",m:"55",ht:4.66,c:91}]},
+  "2026-07-20":{ex:[{t:"low",h:"12",m:"24",ht:1.87},{t:"high",h:"19",m:"00",ht:4.50,c:85},{t:"low",h:"00",m:"47",ht:1.83},{t:"high",h:"06",m:"51",ht:4.57,c:87}]},
+  "2026-07-21":{ex:[{t:"low",h:"13",m:"22",ht:2.00},{t:"high",h:"20",m:"01",ht:4.42,c:82},{t:"low",h:"01",m:"46",ht:1.95},{t:"high",h:"07",m:"51",ht:4.50,c:83}]},
+  "2026-07-22":{ex:[{t:"low",h:"14",m:"23",ht:2.09},{t:"high",h:"21",m:"03",ht:4.37,c:79},{t:"low",h:"02",m:"47",ht:2.05},{t:"high",h:"08",m:"53",ht:4.46,c:80}]},
+  "2026-07-23":{ex:[{t:"low",h:"15",m:"23",ht:2.14},{t:"high",h:"22",m:"03",ht:4.37,c:78},{t:"low",h:"03",m:"49",ht:2.11},{t:"high",h:"09",m:"55",ht:4.45,c:78}]},
+  "2026-07-24":{ex:[{t:"low",h:"16",m:"20",ht:2.14},{t:"high",h:"22",m:"59",ht:4.40,c:78},{t:"low",h:"04",m:"48",ht:2.11},{t:"high",h:"10",m:"53",ht:4.48,c:79}]},
+  "2026-07-25":{ex:[{t:"low",h:"17",m:"12",ht:2.09},{t:"high",h:"23",m:"50",ht:4.47,c:80},{t:"low",h:"05",m:"43",ht:2.06},{t:"high",h:"11",m:"47",ht:4.55,c:82}]},
+  "2026-07-26":{ex:[{t:"low",h:"18",m:"00",ht:2.01},{t:"high",h:"00",m:"37",ht:4.56,c:83},{t:"low",h:"06",m:"33",ht:1.97},{t:"high",h:"12",m:"36",ht:4.63,c:85}]},
+  "2026-07-27":{ex:[{t:"low",h:"18",m:"44",ht:1.89},{t:"high",h:"01",m:"20",ht:4.67,c:87},{t:"low",h:"07",m:"19",ht:1.86},{t:"high",h:"13",m:"22",ht:4.72,c:88}]},
+  "2026-07-28":{ex:[{t:"low",h:"19",m:"25",ht:1.77},{t:"high",h:"02",m:"01",ht:4.78,c:90},{t:"low",h:"08",m:"01",ht:1.74},{t:"high",h:"14",m:"05",ht:4.82,c:91}]},
+  "2026-07-29":{ex:[{t:"low",h:"20",m:"04",ht:1.64},{t:"high",h:"02",m:"40",ht:4.89,c:93},{t:"low",h:"08",m:"41",ht:1.62},{t:"high",h:"14",m:"47",ht:4.92,c:94}]},
+  "2026-07-30":{ex:[{t:"low",h:"20",m:"42",ht:1.52},{t:"high",h:"03",m:"18",ht:4.99,c:95},{t:"low",h:"09",m:"20",ht:1.50},{t:"high",h:"15",m:"28",ht:5.01,c:96}]},
+  "2026-07-31":{ex:[{t:"low",h:"21",m:"19",ht:1.41},{t:"high",h:"03",m:"56",ht:5.07,c:97},{t:"low",h:"09",m:"58",ht:1.39},{t:"high",h:"16",m:"08",ht:5.09,c:97}]},
+  // AOUT 2026
+  "2026-08-01":{ex:[{t:"low",h:"21",m:"56",ht:1.31},{t:"high",h:"04",m:"34",ht:5.14,c:98},{t:"low",h:"10",m:"36",ht:1.29},{t:"high",h:"16",m:"48",ht:5.15,c:98}]},
+  "2026-08-02":{ex:[{t:"low",h:"22",m:"33",ht:1.22},{t:"high",h:"05",m:"12",ht:5.19,c:99},{t:"low",h:"11",m:"14",ht:1.21},{t:"high",h:"17",m:"27",ht:5.20,c:99}]},
+  "2026-08-03":{ex:[{t:"low",h:"23",m:"11",ht:1.16},{t:"high",h:"05",m:"51",ht:5.23,c:100},{t:"low",h:"11",m:"53",ht:1.14},{t:"high",h:"18",m:"07",ht:5.23,c:100}]},
+  "2026-08-04":{ex:[{t:"low",h:"23",m:"50",ht:1.12},{t:"high",h:"06",m:"31",ht:5.26,c:101},{t:"low",h:"12",m:"33",ht:1.10},{t:"high",h:"18",m:"48",ht:5.25,c:101}]},
+  "2026-08-05":{ex:[{t:"low",h:"00",m:"30",ht:1.10},{t:"high",h:"07",m:"12",ht:5.27,c:101},{t:"low",h:"13",m:"14",ht:1.09},{t:"high",h:"19",m:"29",ht:5.25,c:101}]},
+  "2026-08-06":{ex:[{t:"low",h:"01",m:"12",ht:1.11},{t:"high",h:"07",m:"55",ht:5.26,c:101},{t:"low",h:"13",m:"56",ht:1.10},{t:"high",h:"20",m:"12",ht:5.23,c:100}]},
+  "2026-08-07":{ex:[{t:"low",h:"01",m:"56",ht:1.15},{t:"high",h:"08",m:"39",ht:5.22,c:100},{t:"low",h:"14",m:"40",ht:1.14},{t:"high",h:"20",m:"56",ht:5.19,c:99}]},
+  "2026-08-08":{ex:[{t:"low",h:"02",m:"42",ht:1.21},{t:"high",h:"09",m:"25",ht:5.16,c:99},{t:"low",h:"15",m:"26",ht:1.20},{t:"high",h:"21",m:"42",ht:5.12,c:97}]},
+  "2026-08-09":{ex:[{t:"low",h:"03",m:"30",ht:1.30},{t:"high",h:"10",m:"14",ht:5.08,c:97},{t:"low",h:"16",m:"13",ht:1.28},{t:"high",h:"22",m:"29",ht:5.04,c:95}]},
+  "2026-08-10":{ex:[{t:"low",h:"04",m:"21",ht:1.40},{t:"high",h:"11",m:"05",ht:4.97,c:94},{t:"low",h:"17",m:"03",ht:1.38},{t:"high",h:"23",m:"18",ht:4.94,c:92}]},
+  "2026-08-11":{ex:[{t:"low",h:"05",m:"14",ht:1.52},{t:"high",h:"11",m:"58",ht:4.86,c:91},{t:"low",h:"17",m:"54",ht:1.49},{t:"high",h:"00",m:"09",ht:4.83,c:89}]},
+  "2026-08-12":{ex:[{t:"low",h:"06",m:"09",ht:1.64},{t:"high",h:"12",m:"53",ht:4.74,c:87},{t:"low",h:"18",m:"46",ht:1.61},{t:"high",h:"01",m:"02",ht:4.73,c:86}]},
+  "2026-08-13":{ex:[{t:"low",h:"07",m:"05",ht:1.76},{t:"high",h:"13",m:"48",ht:4.63,c:84},{t:"low",h:"19",m:"39",ht:1.72},{t:"high",h:"01",m:"57",ht:4.64,c:85}]},
+  "2026-08-14":{ex:[{t:"low",h:"08",m:"01",ht:1.85},{t:"high",h:"14",m:"43",ht:4.54,c:83},{t:"low",h:"20",m:"32",ht:1.81},{t:"high",h:"02",m:"52",ht:4.58,c:84}]},
+  "2026-08-15":{ex:[{t:"low",h:"08",m:"56",ht:1.92},{t:"high",h:"15",m:"36",ht:4.48,c:83},{t:"low",h:"21",m:"23",ht:1.88},{t:"high",h:"03",m:"46",ht:4.55,c:85}]},
+  "2026-08-16":{ex:[{t:"low",h:"09",m:"49",ht:1.96},{t:"high",h:"16",m:"27",ht:4.46,c:84},{t:"low",h:"22",m:"11",ht:1.92},{t:"high",h:"04",m:"38",ht:4.55,c:86}]},
+  "2026-08-17":{ex:[{t:"low",h:"10",m:"39",ht:1.97},{t:"high",h:"17",m:"15",ht:4.48,c:86},{t:"low",h:"22",m:"58",ht:1.93},{t:"high",h:"05",m:"27",ht:4.59,c:88}]},
+};
+
+function getTodayTides() {
+  const today = new Date().toISOString().slice(0,10);
+  const data = TIDES_SHOM[today];
+  if (!data) return null;
+  // Reconstruct full extremes with proper datetime
+  const extremes = data.ex.map(e => ({
+    type: e.t === "high" ? "high" : "low",
+    datetime: `${today}T${e.h}:${e.m}:00`,
+    height_m: e.ht.toFixed(2),
+    coefficient: e.c || null
+  }));
+  const coeffs = data.ex.filter(e=>e.c).map(e=>e.c);
+  const maxCoeff = coeffs.length ? Math.max(...coeffs) : null;
+  return { extremes, coefficient: maxCoeff, _shom: true };
+}
+
+// ── Météo Open-Meteo gratuite ────────────────────────────────
+async function fetchWeather() {
+  const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,wind_speed_10m,wind_direction_10m,wave_height,weather_code,precipitation&wind_speed_unit=kn&timezone=Europe/Paris`);
+  if (!r.ok) throw new Error("Météo indisponible");
+  return (await r.json()).current;
+}
+
+// ── Règles de pêche expertes ─────────────────────────────────
+function analyzeConditions(weather, tides) {
+  const coeff = tides?.coefficient ?? 70;
+  const wind = weather.wind_speed_10m ?? 10;
+  const wave = weather.wave_height ?? 0.3;
+  const precip = weather.precipitation ?? 0;
+  const wcode = weather.weather_code ?? 0;
+
+  const isStorm = wcode >= 80 || wind > 25 || wave > 1.5;
+  const isRain = precip > 2;
+  const isSpring = coeff >= 90;
+  const isNeap = coeff <= 50;
+  const calmSea = wind <= 15 && wave <= 0.8;
+  const moderateSea = wind <= 20 && wave <= 1.2;
+
+  const today = new Date().toISOString().slice(0,10);
+  const todayEx = tides?.extremes?.filter(e=>e.datetime.startsWith(today)) ?? [];
+  const lowTide = todayEx.find(t=>t.type==="low");
+  const lowH = lowTide ? parseInt(lowTide.datetime.slice(11,13)) : 13;
+  const lowM = lowTide ? lowTide.datetime.slice(14,16) : "00";
+  const before = `${String((lowH-2+24)%24).padStart(2,"0")}h${lowM}`;
+  const after  = `${String((lowH+1)%24).padStart(2,"0")}h${lowM}`;
+  const bmStr  = `${String(lowH).padStart(2,"0")}h${lowM}`;
+  const bmRange = `${before} → ${after}`;
+
+  let score, verdict, meilleurMoment, alertes=[], conseils, demain, recommandations=[];
+
+  if (isStorm) { score=1; verdict="Conditions difficiles — pêche déconseillée en mer"; }
+  else if (isSpring && calmSea) { score=5; verdict="Conditions exceptionnelles ! 🏆"; }
+  else if (isSpring && moderateSea) { score=4; verdict="Très bonne journée de pêche !"; }
+  else if (!isNeap && calmSea) { score=4; verdict="Bonne journée pour sortir pêcher"; }
+  else if (isNeap && calmSea) { score=3; verdict="Conditions correctes — privilégiez le lancer"; }
+  else { score=2; verdict="Mer agitée — spots abrités conseillés"; }
+
+  meilleurMoment = isSpring ? `Autour de la BM : ${bmRange}` : `Aube/crépuscule, 1h avant les étales`;
+
+  if (isStorm) { alertes.push("Conditions dangereuses — ne pas sortir en mer !"); }
+  if (wind > 25) alertes.push(`Vent fort : ${wind} nœuds`);
+  if (wave > 1.5) alertes.push(`Vagues importantes : ${wave}m`);
+  if (isRain) alertes.push("Pluie — prévoyez un imperméable");
+
+  if (coeff >= 70 && !isStorm) {
+    recommandations.push({
+      type:"Pêche à pied",
+      cibles: isSpring ? "Crevettes grises, coques, palourdes, étrilles, bigorneaux" : "Crevettes, moules, bigorneaux",
+      technique:"Haveneau pour les crevettes dans les rochers, couteau pour les coques dans le sable",
+      meilleurSpot:"Rochers de la Pointe de Penchâteau, plage du Nau côté rochers",
+      horaire:`2h avant et 1h après la BM → ${bmRange}`,
+      emoji:"🦐", faisabilite: isSpring?5:3,
+      note: isSpring?"Grande vive-eau : estran très découvert, conditions idéales !":""
+    });
+  }
+
+  if (!isStorm && moderateSea) {
+    recommandations.push({
+      type:"Bar au lancer",
+      cibles:"Bar (loup), maigre en été",
+      technique: wind>15 ? "Leurres souples 10-15cm, spots abrités sous le vent" : "Popper surface à l'aube/crépuscule, leurres souples sinon",
+      meilleurSpot:"Jetée du Pouliguen, pointe de Penchâteau, brise-lames",
+      horaire: isSpring ? `Montée de marée après ${bmStr}, coucher du soleil` : "Aube et crépuscule, 1h avant les étales",
+      emoji:"🐟", faisabilite: calmSea?4:3,
+      note: wind>15?`Vent ${wind} nœuds — optez pour les spots abrités`:""
+    });
+  }
+
+  if (!isStorm && calmSea) {
+    recommandations.push({
+      type:"Dorade royale",
+      cibles:"Dorade royale, dorade grise",
+      technique:"Araignée de mer ou vers, fond sableux 2-8m",
+      meilleurSpot:"Fond de la baie de La Baule, près des herbiers entre Le Pouliguen et Pornichet",
+      horaire:"Milieu de journée par beau temps, montée de marée",
+      emoji:"🐠", faisabilite: isSpring?4:3, note:""
+    });
+  }
+
+  if (isStorm || (!calmSea && !moderateSea)) {
+    recommandations.push({
+      type:"Alternative : eau douce",
+      cibles:"Sandre, brochet, perche",
+      technique:"Lancer aux leurres souples ou pêche au vif",
+      meilleurSpot:"Lac de Sandun à Guérande (15 min), étangs de Brière",
+      horaire:"Toute la journée, aube et crépuscule de préférence",
+      emoji:"🌿", faisabilite:3,
+      note:"Bonne alternative par mauvais temps côtier"
+    });
+  }
+
+  if (isSpring) conseils=`Coefficient ${coeff} : vive-eau ! L'estran de Le Pouliguen sera largement découvert. Munissez-vous d'un haveneau et d'un seau. Respectez la taille minimale de capture et ne prenez que ce dont vous avez besoin.`;
+  else if (isNeap) conseils=`Coefficient ${coeff} (morte-eau) : peu d'estran. Privilégiez le lancer depuis la jetée ou le brise-lames. Bonne période pour cibler le bar en surface à l'aube.`;
+  else conseils=`Coefficient ${coeff} intermédiaire. Les rochers de la Pointe de Penchâteau restent productifs. La jetée du Pouliguen est accessible toute la journée pour le bar et la dorade.`;
+
+  // Demain
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1);
+  const tomorrowKey = tomorrow.toISOString().slice(0,10);
+  const tomorrowData = TIDES_SHOM[tomorrowKey];
+  if (tomorrowData) {
+    const tc = tomorrowData.ex.filter(e=>e.c).map(e=>e.c);
+    const tCoeff = tc.length ? Math.max(...tc) : coeff;
+    const tSpring = tCoeff >= 90;
+    demain = `Coefficient ${tCoeff} demain (${tSpring?"vive-eau 🔴":tCoeff<=50?"morte-eau 🔵":"intermédiaire 🟠"}). ${tSpring?"Excellentes conditions pour la pêche à pied !":"Consultez Météo France Marine pour les vents."}`;
+  } else {
+    demain = "Données non disponibles pour demain — consultez maree.info pour les horaires exacts.";
+  }
+
+  return { score, verdict, meilleurMoment, recommandations, alertes, conseils, demain };
+}
+
+// ── Composants ───────────────────────────────────────────────
+function Stars({score}) {
+  return <div style={{display:"flex",gap:"4px",justifyContent:"center"}}>
+    {[1,2,3,4,5].map(i=><span key={i} style={{fontSize:"1.5rem",color:i<=score?"#f5a623":"#2a3a4a"}}>★</span>)}
+  </div>;
+}
+
+function TideChip({t}) {
+  const hi = t.type==="high";
+  return <div style={{background:hi?"linear-gradient(135deg,#4ecdc4,#2980b9)":"linear-gradient(135deg,#2c3e50,#3498db)",borderRadius:"10px",padding:"8px 12px",minWidth:"72px",textAlign:"center"}}>
+    <div style={{color:hi?"#fff":"#a0c4d8",fontSize:"0.68rem",fontWeight:"700"}}>{hi?"PM":"BM"}</div>
+    <div style={{color:"#fff",fontSize:"0.9rem",fontWeight:"700"}}>{t.datetime.slice(11,16)}</div>
+    <div style={{color:"rgba(255,255,255,0.8)",fontSize:"0.72rem"}}>{t.height_m}m</div>
+    {t.coefficient&&<div style={{color:"#f5a623",fontSize:"0.65rem",fontWeight:"700"}}>coef.{t.coefficient}</div>}
+  </div>;
+}
+
+function FishCard({rec}) {
+  return <div className="fade-in" style={{background:"linear-gradient(135deg,#0d2137,#0a1a2e)",border:"1px solid #1a3a5a",borderRadius:"16px",padding:"18px",display:"flex",flexDirection:"column",gap:"10px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <span style={{fontSize:"2rem"}}>{rec.emoji}</span>
+      <div style={{display:"flex",gap:"3px",alignItems:"flex-end",height:"28px"}}>
+        {[1,2,3,4,5].map(i=><div key={i} style={{width:"9px",height:i*5+"px",background:i<=rec.faisabilite?"#4ecdc4":"#1a2a3a",borderRadius:"2px",alignSelf:"flex-end"}}/>)}
+      </div>
+    </div>
+    <div>
+      <div style={{color:"#4ecdc4",fontFamily:"'Playfair Display',serif",fontSize:"1.05rem",fontWeight:"700"}}>{rec.type}</div>
+      <div style={{color:"#a0c4d8",fontSize:"0.82rem",marginTop:"2px"}}>🎯 {rec.cibles}</div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+      {[["Technique",rec.technique],["Horaire",rec.horaire]].map(([l,v])=>
+        <div key={l} style={{background:"#091525",borderRadius:"8px",padding:"8px"}}>
+          <div style={{color:"#4a7a9b",fontSize:"0.65rem",textTransform:"uppercase",letterSpacing:"1px"}}>{l}</div>
+          <div style={{color:"#c0d8e8",fontSize:"0.8rem",marginTop:"2px"}}>{v}</div>
+        </div>
+      )}
+    </div>
+    <div style={{background:"#091525",borderRadius:"8px",padding:"8px"}}>
+      <div style={{color:"#4a7a9b",fontSize:"0.65rem",textTransform:"uppercase",letterSpacing:"1px"}}>📍 Spot</div>
+      <div style={{color:"#c0d8e8",fontSize:"0.8rem",marginTop:"2px"}}>{rec.meilleurSpot}</div>
+    </div>
+    {rec.note?<div style={{color:"#f5a623",fontSize:"0.78rem",background:"rgba(245,166,35,0.08)",borderRadius:"8px",padding:"8px"}}>💡 {rec.note}</div>:null}
+  </div>;
+}
+
+const scoreColor = s => s>=4?"#4ecdc4":s>=3?"#f5a623":"#e74c3c";
+const wxLabel = c => {
+  if(c==null)return"—";if(c===0)return"☀️ Dégagé";if(c<=3)return"🌤️ Nuageux";
+  if(c<=49)return"🌫️ Brouillard";if(c<=67)return"🌧️ Pluie";if(c<=82)return"🌦️ Averses";return"⛈️ Orage";
+};
+
+// ── App ──────────────────────────────────────────────────────
+function App() {
+  const [state, setState] = useState("loading");
+  const [weather, setWeather] = useState(null);
+  const [tides, setTides] = useState(null);
+  const [reco, setReco] = useState(null);
+  const [error, setError] = useState("");
+
+  const run = async () => {
+    setState("loading"); setError("");
+    try {
+      const w = await fetchWeather();
+      const t = getTodayTides();
+      setWeather(w); setTides(t);
+      setReco(analyzeConditions(w, t));
+      setState("done");
+    } catch(err) { setError(err.message); setState("error"); }
+  };
+
+  useEffect(()=>{run();},[]);
+
+  const today = new Date().toISOString().slice(0,10);
+  const todayTides = tides?.extremes?.filter(e=>e.datetime.startsWith(today))||[];
+  const coeff = tides?.coefficient??null;
+  const isSpring=coeff>=90, isNeap=coeff<=50;
+  const hasShom = tides?._shom;
+
+  return <div style={{maxWidth:"600px",margin:"0 auto",padding:"0 16px"}}>
+    <div style={{textAlign:"center",padding:"28px 0 20px"}}>
+      <div style={{fontSize:"2.4rem"}}>🎣</div>
+      <h1 style={{fontFamily:"'Playfair Display',serif",fontSize:"clamp(1.5rem,6vw,2.2rem)",fontWeight:"900",margin:"6px 0 0",background:"linear-gradient(135deg,#4ecdc4,#a8e6e3,#2980b9)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Pêche Le Pouliguen</h1>
+      <p style={{color:"#4a7a9b",fontSize:"0.78rem",letterSpacing:"2px",textTransform:"uppercase",marginTop:"4px"}}>Marées SHOM · Météo · Conseils experts</p>
+      <p style={{color:"#2a5a7a",fontSize:"0.75rem",marginTop:"4px"}}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</p>
+    </div>
+
+    {state==="loading"&&<div style={{textAlign:"center",padding:"70px 20px"}}>
+      <div className="spin" style={{fontSize:"3rem",marginBottom:"16px"}}>🌊</div>
+      <p style={{color:"#4ecdc4",fontFamily:"'Playfair Display',serif",fontSize:"1.1rem"}}>Chargement des conditions...</p>
+    </div>}
+
+    {state==="error"&&<div style={{textAlign:"center",padding:"40px 20px"}}>
+      <div style={{fontSize:"2.5rem",marginBottom:"12px"}}>⚠️</div>
+      <p style={{color:"#e74c3c",fontSize:"0.9rem",marginBottom:"16px"}}>{error}</p>
+      <button onClick={run} style={{background:"#4ecdc4",color:"#020c18",border:"none",borderRadius:"12px",padding:"12px 28px",fontWeight:"700",fontSize:"0.95rem",cursor:"pointer"}}>Réessayer</button>
+    </div>}
+
+    {state==="done"&&weather&&reco&&<div className="fade-in" style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+
+      <div style={{background:`linear-gradient(135deg,${scoreColor(reco.score)}22,#041428)`,border:`1px solid ${scoreColor(reco.score)}44`,borderRadius:"20px",padding:"20px",textAlign:"center"}}>
+        <Stars score={reco.score}/>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:"1.25rem",color:scoreColor(reco.score),marginTop:"8px",fontWeight:"700"}}>{reco.verdict}</div>
+        <div style={{color:"#6a9ab8",marginTop:"6px",fontSize:"0.83rem"}}>⏰ <strong style={{color:"#c0d8e8"}}>{reco.meilleurMoment}</strong></div>
+      </div>
+
+      {reco.alertes?.length>0&&<div style={{background:"linear-gradient(135deg,#3d1a1a,#1a0a0a)",border:"1px solid #8b2020",borderRadius:"12px",padding:"14px 16px",display:"flex",flexDirection:"column",gap:"6px"}}>
+        {reco.alertes.map((a,i)=><div key={i} style={{color:"#ff8080",fontSize:"0.85rem"}}>⚠️ {a}</div>)}
+      </div>}
+
+      <div style={{background:"linear-gradient(135deg,#0a1e35,#061525)",border:"1px solid #1a3a5a",borderRadius:"16px",padding:"16px"}}>
+        <div style={{color:"#4a7a9b",fontSize:"0.68rem",textTransform:"uppercase",letterSpacing:"2px",marginBottom:"10px"}}>🌊 Conditions Météo Marine</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+          {[["Ciel",wxLabel(weather.weather_code)],["Température",weather.temperature_2m+"°C"],["Précipitations",weather.precipitation+" mm"],["Vague",(weather.wave_height??"—")+" m"]].map(([l,v])=>
+            <div key={l} style={{background:"#091525",borderRadius:"10px",padding:"10px 12px"}}>
+              <div style={{color:"#4a7a9b",fontSize:"0.65rem",textTransform:"uppercase"}}>{l}</div>
+              <div style={{color:"#c0d8e8",fontSize:"0.85rem",marginTop:"2px"}}>{v}</div>
+            </div>
+          )}
+        </div>
+        <div style={{background:"#091525",borderRadius:"10px",padding:"10px 12px",marginTop:"8px"}}>
+          <div style={{color:"#4a7a9b",fontSize:"0.65rem",textTransform:"uppercase"}}>Vent</div>
+          <div style={{color:"#c0d8e8",fontSize:"0.85rem",marginTop:"2px"}}>
+            <span style={{display:"inline-block",transform:`rotate(${weather.wind_direction_10m}deg)`,marginRight:"6px"}}>↑</span>
+            {weather.wind_speed_10m} nœuds ({weather.wind_direction_10m}°)
+          </div>
+        </div>
+      </div>
+
+      <div style={{background:"linear-gradient(135deg,#0a1e35,#061525)",border:"1px solid #1a3a5a",borderRadius:"16px",padding:"16px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px",flexWrap:"wrap",gap:"6px"}}>
+          <div style={{color:"#4a7a9b",fontSize:"0.68rem",textTransform:"uppercase",letterSpacing:"2px"}}>
+            {hasShom?"🌙 Marées SHOM Officielles":"🌙 Marées du Jour"}
+          </div>
+          {coeff&&<div style={{background:isSpring?"linear-gradient(135deg,#e74c3c,#c0392b)":isNeap?"linear-gradient(135deg,#2980b9,#1a6a99)":"linear-gradient(135deg,#f5a623,#d4891a)",borderRadius:"20px",padding:"3px 10px",fontSize:"0.72rem",fontWeight:"700",color:"#fff"}}>
+            Coeff. {coeff} — {isSpring?"Vive-eau 🔴":isNeap?"Morte-eau 🔵":"Intermédiaire 🟠"}
+          </div>}
+        </div>
+        {todayTides.length>0
+          ? <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>{todayTides.map((t,i)=><TideChip key={i} t={t}/>)}</div>
+          : <div style={{color:"#4a7a9b",fontSize:"0.82rem"}}>Données non disponibles pour aujourd'hui — <a href="https://maree.info/115" target="_blank" rel="noreferrer">maree.info</a></div>
+        }
+        {hasShom&&<div style={{marginTop:"8px",color:"#2a6a4a",fontSize:"0.7rem"}}>✅ Données © SHOM 2026 — officielles</div>}
+        {isSpring&&<div style={{marginTop:"8px",color:"#4ecdc4",fontSize:"0.78rem",background:"rgba(78,205,196,0.08)",borderRadius:"8px",padding:"8px 10px"}}>💡 Vive-eau : grand estran découvert — idéal pour la pêche à pied !</div>}
+      </div>
+
+      <div style={{color:"#4a7a9b",fontSize:"0.68rem",textTransform:"uppercase",letterSpacing:"2px",marginTop:"4px"}}>🎯 Recommandations du Jour</div>
+      {reco.recommandations.map((r,i)=><FishCard key={i} rec={r}/>)}
+
+      <div style={{background:"linear-gradient(135deg,#0d1f10,#061525)",border:"1px solid #1a4a2a",borderRadius:"16px",padding:"16px"}}>
+        <div style={{color:"#4ecdc4",fontSize:"0.68rem",textTransform:"uppercase",letterSpacing:"2px",marginBottom:"8px"}}>💡 Conseils Locaux</div>
+        <p style={{color:"#a0c4a8",fontSize:"0.85rem",lineHeight:"1.6"}}>{reco.conseils}</p>
+        <div style={{marginTop:"14px",paddingTop:"14px",borderTop:"1px solid #1a3a2a"}}>
+          <div style={{color:"#4a7a9b",fontSize:"0.68rem",textTransform:"uppercase",letterSpacing:"2px",marginBottom:"6px"}}>📅 Prévision Demain</div>
+          <p style={{color:"#8ab89a",fontSize:"0.83rem",lineHeight:"1.6"}}>{reco.demain}</p>
+        </div>
+      </div>
+
+      <button onClick={run} style={{background:"linear-gradient(135deg,#4ecdc4,#2980b9)",color:"#020c18",border:"none",borderRadius:"14px",padding:"14px",width:"100%",fontWeight:"700",fontSize:"0.92rem",cursor:"pointer"}}>
+        🔄 Actualiser les conditions
+      </button>
+      <p style={{textAlign:"center",color:"#1a3a5a",fontSize:"0.7rem"}}>
+        Météo : Open-Meteo · Marées : © SHOM 2026 · 100% gratuit
+      </p>
+    </div>}
+  </div>;
+}
+
+ReactDOM.render(<App/>, document.getElementById("root"));
+</script>
+</body>
+</html>
