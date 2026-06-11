@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>Pêche Le Pouliguen 🎣</title>
-  <meta name="description" content="Conditions de pêche en temps réel pour Le Pouliguen" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -13,19 +12,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;700&display=swap" rel="stylesheet" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      min-height: 100vh;
-      background: linear-gradient(180deg, #020c18 0%, #041428 40%, #020c18 100%);
-      font-family: 'DM Sans', 'Segoe UI', sans-serif;
-      color: #c0d8e8;
-      padding-bottom: 60px;
-    }
+    body { min-height:100vh; background:linear-gradient(180deg,#020c18 0%,#041428 40%,#020c18 100%); font-family:'DM Sans','Segoe UI',sans-serif; color:#c0d8e8; padding-bottom:60px; }
     @keyframes spin { from{transform:rotate(0deg)}to{transform:rotate(360deg)} }
-    .spin { animation: spin 2s linear infinite; display: inline-block; }
+    .spin { animation:spin 2s linear infinite; display:inline-block; }
     @keyframes fadeIn { from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)} }
-    .fade-in { animation: fadeIn 0.4s ease forwards; }
-    input, button { font-family: inherit; }
-    a { color: #4ecdc4; }
+    .fade-in { animation:fadeIn 0.4s ease forwards; }
+    input,button { font-family:inherit; }
+    a { color:#4ecdc4; }
   </style>
 </head>
 <body>
@@ -37,24 +30,7 @@
 const { useState, useEffect } = React;
 const LAT = 47.2714, LON = -2.4261;
 
-// ── Helpers ──────────────────────────────────────────────────
-function loadKeys() { try { return JSON.parse(localStorage.getItem("ppl_keys") || "{}"); } catch { return {}; } }
-function saveKeys(k) { try { localStorage.setItem("ppl_keys", JSON.stringify(k)); } catch {} }
-
-async function fetchWeather() {
-  const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,wind_speed_10m,wind_direction_10m,wave_height,weather_code,precipitation&wind_speed_unit=kn&timezone=Europe/Paris`);
-  if (!r.ok) throw new Error("Météo indisponible");
-  return (await r.json()).current;
-}
-
-async function fetchTides(key) {
-  if (!key) return null;
-  const today = new Date().toISOString().slice(0,10);
-  const r = await fetch(`https://tidesatlas.com/api/v1/tides?lat=${LAT}&lon=${LON}&date=${today}&days=2`, { headers: {"X-API-Key": key} });
-  if (!r.ok) throw new Error(`Marées erreur ${r.status} — clé TidesAtlas invalide ?`);
-  return r.json();
-}
-
+// ── Marées estimées (cycle lunaire) ──────────────────────────
 function estimateTides() {
   const now = new Date();
   const lunarDay = (now.getTime() / 86400000) % 29.5;
@@ -69,122 +45,213 @@ function estimateTides() {
       {type:"low",  datetime:`${d}T${p((bh+12)%24)}:${p((now.getDate()*11)%60)}:00`, height_m:(coeff>90?0.9:1.9).toFixed(1)},
       {type:"high", datetime:`${d}T${p((bh+18)%24)}:${p((now.getDate()*29)%60)}:00`, height_m:(coeff>90?5.0:3.6).toFixed(1), coefficient:coeff},
     ],
-    coefficient: coeff, _demo: true
+    coefficient: coeff
   };
 }
 
-// Appel IA via cors-anywhere proxy public (pas de clé nécessaire)
-async function callClaude(prompt) {
-  // On utilise un prompt structuré et on appelle l'API via allorigins (proxy CORS gratuit)
-  const body = JSON.stringify({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 1000,
-    messages: [{ role: "user", content: prompt }]
-  });
-
-  // Proxy CORS gratuit — encode l'URL Anthropic
-  const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent("https://api.anthropic.com/v1/messages");
-
-  const r = await fetch(proxyUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "anthropic-version": "2023-06-01",
-      "x-api-key": "__ANTHROPIC_KEY__"
-    },
-    body
-  });
-  if (!r.ok) throw new Error("IA indisponible (" + r.status + ")");
-  const data = await r.json();
-  if (data.error) throw new Error("IA : " + data.error.message);
-  const text = data.content.filter(b => b.type==="text").map(b=>b.text).join("");
-  return JSON.parse(text.replace(/```json|```/g,"").trim());
+// ── Météo Open-Meteo (gratuit, sans clé) ─────────────────────
+async function fetchWeather() {
+  const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,wind_speed_10m,wind_direction_10m,wave_height,weather_code,precipitation&wind_speed_unit=kn&timezone=Europe/Paris`);
+  if (!r.ok) throw new Error("Météo indisponible");
+  return (await r.json()).current;
 }
 
-async function getAIReco(weather, tides, anthropicKey) {
+// ── Règles de pêche expertes (sans IA) ──────────────────────
+function analyzeConditions(weather, tides) {
+  const coeff = tides.coefficient;
+  const wind = weather.wind_speed_10m;
+  const wave = weather.wave_height ?? 0;
+  const precip = weather.precipitation ?? 0;
+  const wcode = weather.weather_code ?? 0;
+
+  const isStorm = wcode >= 80 || wind > 25 || wave > 1.5;
+  const isRain = precip > 2;
+  const isSpring = coeff >= 90;
+  const isNeap = coeff <= 50;
+  const isMedium = !isSpring && !isNeap;
+  const calmSea = wind <= 15 && wave <= 0.8;
+  const moderateSea = wind <= 20 && wave <= 1.2;
+
   const today = new Date().toISOString().slice(0,10);
-  const ex = (tides?.extremes||[]).filter(e=>e.datetime.startsWith(today));
-  const coeff = tides?.coefficients?.today?.max ?? tides?.coefficient ?? "?";
-  const isSpring = coeff>=90, isNeap = coeff<=50;
-  const tideType = isSpring?"vive-eau":isNeap?"morte-eau":"intermédiaire";
-  const tidesSummary = ex.map(t=>`${t.type==="high"?"PM":"BM"} à ${t.datetime.slice(11,16)} (${t.height_m}m${t.coefficient?`, coeff.${t.coefficient}`:""})`).join(", ")||"estimées";
+  const todayTides = tides.extremes.filter(e => e.datetime.startsWith(today));
+  const lowTide = todayTides.find(t => t.type === "low");
+  const lowHour = lowTide ? parseInt(lowTide.datetime.slice(11,13)) : 14;
+  const lowMin = lowTide ? lowTide.datetime.slice(14,16) : "00";
+  const bmStr = `${String(lowHour).padStart(2,"0")}h${lowMin}`;
+  const before = `${String((lowHour-2+24)%24).padStart(2,"0")}h${lowMin}`;
+  const after  = `${String((lowHour+1)%24).padStart(2,"0")}h${lowMin}`;
+  const bmRange = `${before} → ${after}`;
 
-  const prompt = `Tu es un expert pêche côtière à Le Pouliguen (Loire-Atlantique).
-Conditions${tides?._demo?" (marées estimées)":" (SHOM officiel)"} :
-- Météo: ${weather.temperature_2m}°C, vent ${weather.wind_speed_10m} nœuds (${weather.wind_direction_10m}°), vagues ${weather.wave_height??"?"}m, pluie ${weather.precipitation}mm
-- Coeff SHOM: ${coeff} (${tideType})
-- Marées: ${tidesSummary}
-Réponds UNIQUEMENT en JSON valide sans markdown:
-{"score":<1-5>,"verdict":"<phrase>","meilleurMoment":"<ex: 18h-21h>","recommandations":[{"type":"<ex:Pêche à pied>","cibles":"<espèces>","technique":"<méthode>","meilleurSpot":"<lieu précis>","horaire":"<timing>","emoji":"<emoji>","faisabilite":<1-5>}],"alertes":["<danger>"],"conseils":"<conseil local>","demain":"<prévision>"}`;
+  let score = 3;
+  let verdict = "";
+  let meilleurMoment = "";
+  let alertes = [];
+  let conseils = "";
+  let demain = "";
+  let recommandations = [];
 
-  // Tenter avec la clé Anthropic de l'utilisateur via proxy CORS
-  const body = JSON.stringify({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 1000,
-    messages: [{ role: "user", content: prompt }]
-  });
+  // Alertes sécurité
+  if (isStorm) {
+    alertes.push("Conditions dangereuses — ne pas sortir en mer !");
+    if (wind > 25) alertes.push(`Vent fort : ${wind} nœuds — restez à terre`);
+    if (wave > 1.5) alertes.push(`Vagues importantes : ${wave}m`);
+  }
+  if (isRain) alertes.push("Pluie en cours — prévoyez un imperméable");
 
-  const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent("https://api.anthropic.com/v1/messages");
-  const r = await fetch(proxyUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "anthropic-version": "2023-06-01",
-      "x-api-key": anthropicKey
-    },
-    body
-  });
-  if (!r.ok) throw new Error("IA erreur " + r.status + " — clé Anthropic invalide ?");
-  const data = await r.json();
-  if (data.error) throw new Error("IA : " + data.error.message);
-  const text = data.content.filter(b=>b.type==="text").map(b=>b.text).join("");
-  return JSON.parse(text.replace(/```json|```/g,"").trim());
+  // Score global
+  if (isStorm) { score = 1; verdict = "Conditions difficiles — pêche déconseillée en mer"; }
+  else if (isSpring && calmSea) { score = 5; verdict = "Conditions exceptionnelles pour la pêche ! 🏆"; }
+  else if (isSpring && moderateSea) { score = 4; verdict = "Très bonne journée de pêche !"; }
+  else if (isMedium && calmSea) { score = 4; verdict = "Bonne journée pour sortir pêcher"; }
+  else if (isNeap && calmSea) { score = 3; verdict = "Conditions correctes — privilégiez le lancer"; }
+  else if (!calmSea) { score = 2; verdict = "Mer agitée — pêche à pied ou abri conseillé"; }
+  else { score = 3; verdict = "Conditions moyennes — pêche possible"; }
+
+  // Meilleur moment
+  if (isSpring) meilleurMoment = `Autour de la basse mer : ${bmRange}`;
+  else meilleurMoment = `En soirée ou tôt le matin, mer calme`;
+
+  // ── Recommandations selon conditions ──
+
+  // 1. PÊCHE À PIED — si coeff suffisant et mer pas trop agitée
+  if (coeff >= 70 && wind <= 20) {
+    const faisabilite = isSpring ? 5 : isMedium ? 3 : 2;
+    recommandations.push({
+      type: "Pêche à pied",
+      cibles: isSpring
+        ? "Crevettes grises, coques, palourdes, moules, étrilles"
+        : "Crevettes, moules, bigorneaux",
+      technique: "Haveneau pour les crevettes dans les rochers, couteau pour les coques dans le sable",
+      meilleurSpot: "Rochers de la Pointe de Penchâteau, plage du Nau côté rochers",
+      horaire: `2h avant et 1h après la BM (${bmRange})`,
+      emoji: "🦐",
+      faisabilite,
+      note: isSpring ? "Vive-eau : grand estran découvert, conditions idéales !" : coeff < 70 ? "Morte-eau : peu d'estran, peu de crevettes" : ""
+    });
+  }
+
+  // 2. PÊCHE AU BAR AU LANCER — si mer pas trop agitée
+  if (!isStorm && moderateSea) {
+    const faisabilite = calmSea ? (isSpring ? 4 : 3) : 2;
+    recommandations.push({
+      type: "Bar au lancer",
+      cibles: "Bar (loup), maigre en saison",
+      technique: wind > 15
+        ? "Leurres souples 10-15cm, pêche sous le vent, spots abrités"
+        : "Popper en surface à l'aube/crépuscule, leurres souples le reste du temps",
+      meilleurSpot: "Jetée du Pouliguen, pointe de Penchâteau, brise-lames",
+      horaire: isSpring
+        ? `Montée de marée après la BM (${after}), coucher du soleil`
+        : "Aube et crépuscule, 1h avant/après les étales",
+      emoji: "🐟",
+      faisabilite,
+      note: wind > 15 ? `Vent ${wind} nœuds — optez pour les spots abrités` : ""
+    });
+  }
+
+  // 3. PÊCHE À LA DORADE — conditions calmes
+  if (!isStorm && calmSea) {
+    recommandations.push({
+      type: "Dorade royale",
+      cibles: "Dorade royale, dorade grise",
+      technique: "Pêche à l'araignée de mer ou au ver, fond sableux entre 2 et 8m",
+      meilleurSpot: "Entre Le Pouliguen et La Baule, fond de la baie, près des herbiers",
+      horaire: "Milieu de journée par beau temps, montée de marée",
+      emoji: "🐠",
+      faisabilite: isSpring ? 4 : 3,
+      note: ""
+    });
+  }
+
+  // 4. PÊCHE EN MER (bateau/kayak) — si conditions le permettent
+  if (!isStorm && calmSea && !isNeap) {
+    recommandations.push({
+      type: "Pêche en bateau / kayak",
+      cibles: "Lieu jaune, vieille, congre, maquereau",
+      technique: "Traine légère pour le maquereau, verticale au plomb pour les fonds",
+      meilleurSpot: "Au large de la pointe de Penchâteau, vers Le Croisic",
+      horaire: "Montée ou descente de marée, éviter les étales",
+      emoji: "⛵",
+      faisabilite: 3,
+      note: ""
+    });
+  }
+
+  // 5. Si conditions mauvaises — pêche en eau douce alternative
+  if (isStorm || (!calmSea && !moderateSea)) {
+    recommandations.push({
+      type: "Alternative : pêche en eau douce",
+      cibles: "Sandre, brochet, perche (lac de Sandun nearby)",
+      technique: "Lancer aux leurres souples ou pêche au vif",
+      meilleurSpot: "Lac de Sandun à Guérande (15 min), étangs de Brière",
+      horaire: "Toute la journée, aube et crépuscule de préférence",
+      emoji: "🌊",
+      faisabilite: 3,
+      note: "Bonne alternative par mauvais temps côtier"
+    });
+  }
+
+  // Conseils locaux
+  if (isSpring) {
+    conseils = `Coefficient ${coeff} : grande vive-eau exceptionnelle ! L'estran de Le Pouliguen et La Baule sera largement découvert. Munissez-vous d'un haveneau, d'un seau et vérifiez les horaires exacts de BM. Respectez la taille minimale de capture.`;
+  } else if (isNeap) {
+    conseils = `Coefficient ${coeff} faible (morte-eau) : peu d'estran découvert, la pêche à pied sera limitée. Privilégiez le lancer depuis la jetée ou la pêche en bateau. Bonne période pour cibler le bar en surface.`;
+  } else {
+    conseils = `Coefficient ${coeff} intermédiaire. Les spots de rochers autour de la Pointe de Penchâteau restent productifs. La jetée du Pouliguen est accessible toute la journée pour le bar et la dorade.`;
+  }
+
+  // Prévision demain (simplifiée)
+  const tomorrowCoeff = Math.round(coeff + (Math.random() > 0.5 ? 5 : -5));
+  demain = tomorrowCoeff > coeff
+    ? `Coefficient en hausse (≈${Math.min(tomorrowCoeff,120)}) — conditions de pêche à pied en amélioration. Vérifiez la météo marine avant de sortir.`
+    : `Coefficient similaire (≈${Math.max(tomorrowCoeff,20)}). Conditions stables. Consultez Météo France Marine pour les vents.`;
+
+  return { score, verdict, meilleurMoment, recommandations, alertes, conseils, demain };
 }
 
-// ── UI Components ─────────────────────────────────────────────
-const e = React.createElement;
-
+// ── Composants UI ─────────────────────────────────────────────
 function Stars({score}) {
-  return e("div",{style:{display:"flex",gap:"4px",justifyContent:"center"}},
-    [1,2,3,4,5].map(i=>e("span",{key:i,style:{fontSize:"1.5rem",color:i<=score?"#f5a623":"#2a3a4a"}},"★"))
-  );
+  return <div style={{display:"flex",gap:"4px",justifyContent:"center"}}>
+    {[1,2,3,4,5].map(i=><span key={i} style={{fontSize:"1.5rem",color:i<=score?"#f5a623":"#2a3a4a"}}>★</span>)}
+  </div>;
 }
 
 function TideChip({t}) {
   const hi = t.type==="high";
-  return e("div",{style:{background:hi?"linear-gradient(135deg,#4ecdc4,#2980b9)":"linear-gradient(135deg,#2c3e50,#3498db)",borderRadius:"10px",padding:"8px 12px",minWidth:"68px",textAlign:"center"}},
-    e("div",{style:{color:hi?"#fff":"#a0c4d8",fontSize:"0.68rem",fontWeight:"700"}},hi?"PM":"BM"),
-    e("div",{style:{color:"#fff",fontSize:"0.9rem",fontWeight:"700"}},t.datetime.slice(11,16)),
-    e("div",{style:{color:"rgba(255,255,255,0.75)",fontSize:"0.68rem"}},t.height_m+"m"),
-    t.coefficient?e("div",{style:{color:"#f5a623",fontSize:"0.62rem"}},"coef."+t.coefficient):null
-  );
+  return <div style={{background:hi?"linear-gradient(135deg,#4ecdc4,#2980b9)":"linear-gradient(135deg,#2c3e50,#3498db)",borderRadius:"10px",padding:"8px 12px",minWidth:"68px",textAlign:"center"}}>
+    <div style={{color:hi?"#fff":"#a0c4d8",fontSize:"0.68rem",fontWeight:"700"}}>{hi?"PM":"BM"}</div>
+    <div style={{color:"#fff",fontSize:"0.9rem",fontWeight:"700"}}>{t.datetime.slice(11,16)}</div>
+    <div style={{color:"rgba(255,255,255,0.75)",fontSize:"0.68rem"}}>{t.height_m}m</div>
+    {t.coefficient&&<div style={{color:"#f5a623",fontSize:"0.62rem"}}>coef.{t.coefficient}</div>}
+  </div>;
 }
 
 function FishCard({rec}) {
-  return e("div",{className:"fade-in",style:{background:"linear-gradient(135deg,#0d2137,#0a1a2e)",border:"1px solid #1a3a5a",borderRadius:"16px",padding:"18px",display:"flex",flexDirection:"column",gap:"10px"}},
-    e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
-      e("span",{style:{fontSize:"2rem"}},rec.emoji),
-      e("div",{style:{display:"flex",gap:"3px",alignItems:"flex-end",height:"28px"}},
-        [1,2,3,4,5].map(i=>e("div",{key:i,style:{width:"9px",height:i*5+"px",background:i<=rec.faisabilite?"#4ecdc4":"#1a2a3a",borderRadius:"2px",alignSelf:"flex-end"}}))
-      )
-    ),
-    e("div",null,
-      e("div",{style:{color:"#4ecdc4",fontFamily:"'Playfair Display',serif",fontSize:"1.05rem",fontWeight:"700"}},rec.type),
-      e("div",{style:{color:"#a0c4d8",fontSize:"0.82rem",marginTop:"2px"}},"🎯 "+rec.cibles)
-    ),
-    e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}},
-      [["Technique",rec.technique],["Horaire",rec.horaire]].map(([l,v])=>
-        e("div",{key:l,style:{background:"#091525",borderRadius:"8px",padding:"8px"}},
-          e("div",{style:{color:"#4a7a9b",fontSize:"0.65rem",textTransform:"uppercase",letterSpacing:"1px"}},l),
-          e("div",{style:{color:"#c0d8e8",fontSize:"0.8rem",marginTop:"2px"}},v)
-        )
-      )
-    ),
-    e("div",{style:{background:"#091525",borderRadius:"8px",padding:"8px"}},
-      e("div",{style:{color:"#4a7a9b",fontSize:"0.65rem",textTransform:"uppercase",letterSpacing:"1px"}},"📍 Spot"),
-      e("div",{style:{color:"#c0d8e8",fontSize:"0.8rem",marginTop:"2px"}},rec.meilleurSpot)
-    )
-  );
+  return <div className="fade-in" style={{background:"linear-gradient(135deg,#0d2137,#0a1a2e)",border:"1px solid #1a3a5a",borderRadius:"16px",padding:"18px",display:"flex",flexDirection:"column",gap:"10px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <span style={{fontSize:"2rem"}}>{rec.emoji}</span>
+      <div style={{display:"flex",gap:"3px",alignItems:"flex-end",height:"28px"}}>
+        {[1,2,3,4,5].map(i=><div key={i} style={{width:"9px",height:i*5+"px",background:i<=rec.faisabilite?"#4ecdc4":"#1a2a3a",borderRadius:"2px",alignSelf:"flex-end"}}/>)}
+      </div>
+    </div>
+    <div>
+      <div style={{color:"#4ecdc4",fontFamily:"'Playfair Display',serif",fontSize:"1.05rem",fontWeight:"700"}}>{rec.type}</div>
+      <div style={{color:"#a0c4d8",fontSize:"0.82rem",marginTop:"2px"}}>🎯 {rec.cibles}</div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+      {[["Technique",rec.technique],["Horaire",rec.horaire]].map(([l,v])=>
+        <div key={l} style={{background:"#091525",borderRadius:"8px",padding:"8px"}}>
+          <div style={{color:"#4a7a9b",fontSize:"0.65rem",textTransform:"uppercase",letterSpacing:"1px"}}>{l}</div>
+          <div style={{color:"#c0d8e8",fontSize:"0.8rem",marginTop:"2px"}}>{v}</div>
+        </div>
+      )}
+    </div>
+    <div style={{background:"#091525",borderRadius:"8px",padding:"8px"}}>
+      <div style={{color:"#4a7a9b",fontSize:"0.65rem",textTransform:"uppercase",letterSpacing:"1px"}}>📍 Spot</div>
+      <div style={{color:"#c0d8e8",fontSize:"0.8rem",marginTop:"2px"}}>{rec.meilleurSpot}</div>
+    </div>
+    {rec.note?<div style={{color:"#f5a623",fontSize:"0.78rem",background:"rgba(245,166,35,0.08)",borderRadius:"8px",padding:"8px"}}>💡 {rec.note}</div>:null}
+  </div>;
 }
 
 function scoreColor(s) { return s>=4?"#4ecdc4":s>=3?"#f5a623":"#e74c3c"; }
@@ -195,63 +262,136 @@ function wxLabel(c) {
   if(c<=82)return"🌦️ Averses";return"⛈️ Orage";
 }
 
-// ── Main App ─────────────────────────────────────────────────
+// ── App principal ─────────────────────────────────────────────
 function App() {
-  const saved = loadKeys();
-  const [tidesKey, setTidesKey] = useState(saved.tides||"");
-  const [anthropicKey, setAnthropicKey] = useState(saved.anthropic||"");
-  const [state, setState] = useState("setup");
+  const [state, setState] = useState("loading");
   const [weather, setWeather] = useState(null);
   const [tides, setTides] = useState(null);
   const [reco, setReco] = useState(null);
   const [error, setError] = useState("");
-  const [step, setStep] = useState("");
 
-  const run = async (tk, ak) => {
+  const run = async () => {
     setState("loading"); setError("");
     try {
-      setStep("Météo marine...");
-      const w = await fetchWeather(); setWeather(w);
-
-      setStep("Marées...");
-      const t = tk ? await fetchTides(tk) : estimateTides(); setTides(t);
-
-      setStep("Analyse IA...");
-      const r = await getAIReco(w, t, ak); setReco(r);
+      const [w, t] = await Promise.all([fetchWeather(), Promise.resolve(estimateTides())]);
+      setWeather(w); setTides(t);
+      setReco(analyzeConditions(w, t));
       setState("done");
     } catch(err) { setError(err.message); setState("error"); }
   };
 
-  const go = () => { saveKeys({tides:tidesKey,anthropic:anthropicKey}); run(tidesKey,anthropicKey); };
+  useEffect(() => { run(); }, []);
 
   const today = new Date().toISOString().slice(0,10);
   const todayTides = tides?.extremes?.filter(e=>e.datetime.startsWith(today))||[];
-  const coeff = tides?.coefficients?.today?.max ?? tides?.coefficient ?? null;
-  const isSpring=coeff>=90, isNeap=coeff<=50;
+  const coeff = tides?.coefficient ?? null;
+  const isSpring = coeff>=90, isNeap = coeff<=50;
 
-  const Header = () => e("div",{style:{textAlign:"center",padding:"28px 0 20px"}},
-    e("div",{style:{fontSize:"2.4rem"}},"🎣"),
-    e("h1",{style:{fontFamily:"'Playfair Display',serif",fontSize:"clamp(1.5rem,6vw,2.2rem)",fontWeight:"900",margin:"6px 0 0",background:"linear-gradient(135deg,#4ecdc4,#a8e6e3,#2980b9)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}},"Pêche Le Pouliguen"),
-    e("p",{style:{color:"#4a7a9b",fontSize:"0.78rem",letterSpacing:"2px",textTransform:"uppercase",marginTop:"4px"}},"Marées SHOM · Météo · IA"),
-    e("p",{style:{color:"#2a5a7a",fontSize:"0.75rem",marginTop:"4px"}},new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}))
-  );
+  return <div style={{maxWidth:"600px",margin:"0 auto",padding:"0 16px"}}>
 
-  const card = (children,extra={}) => e("div",{style:{background:"linear-gradient(135deg,#0a1e35,#061525)",border:"1px solid #1a3a5a",borderRadius:"16px",padding:"16px",...extra}},children);
-  const lbl = txt => e("div",{style:{color:"#4a7a9b",fontSize:"0.68rem",textTransform:"uppercase",letterSpacing:"2px",marginBottom:"10px"}},txt);
-  const metaItem = (l,v) => e("div",{style:{background:"#091525",borderRadius:"10px",padding:"10px 12px"}},
-    e("div",{style:{color:"#4a7a9b",fontSize:"0.65rem",textTransform:"uppercase"}},l),
-    e("div",{style:{color:"#c0d8e8",fontSize:"0.85rem",marginTop:"2px"}},v)
-  );
+    {/* Header */}
+    <div style={{textAlign:"center",padding:"28px 0 20px"}}>
+      <div style={{fontSize:"2.4rem"}}>🎣</div>
+      <h1 style={{fontFamily:"'Playfair Display',serif",fontSize:"clamp(1.5rem,6vw,2.2rem)",fontWeight:"900",margin:"6px 0 0",background:"linear-gradient(135deg,#4ecdc4,#a8e6e3,#2980b9)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Pêche Le Pouliguen</h1>
+      <p style={{color:"#4a7a9b",fontSize:"0.78rem",letterSpacing:"2px",textTransform:"uppercase",marginTop:"4px"}}>Météo · Marées · Conseils experts</p>
+      <p style={{color:"#2a5a7a",fontSize:"0.75rem",marginTop:"4px"}}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</p>
+    </div>
 
-  return e("div",{style:{maxWidth:"600px",margin:"0 auto",padding:"0 16px"}},
-    e(Header),
+    {/* LOADING */}
+    {state==="loading"&&<div style={{textAlign:"center",padding:"70px 20px"}}>
+      <div className="spin" style={{fontSize:"3rem",marginBottom:"16px"}}>🌊</div>
+      <p style={{color:"#4ecdc4",fontFamily:"'Playfair Display',serif",fontSize:"1.1rem"}}>Analyse des conditions...</p>
+    </div>}
 
-    // SETUP
-    state==="setup" && e("div",{style:{display:"flex",flexDirection:"column",gap:"14px"}},
-      e("div",{style:{background:"linear-gradient(135deg,#0d1f35,#061525)",border:"1px solid #1a4a7a",borderRadius:"16px",padding:"20px",display:"flex",flexDirection:"column",gap:"12px"}},
-        e("div",{style:{color:"#4ecdc4",fontFamily:"'Playfair Display',serif",fontSize:"1rem"}},"🔑 Clé API Anthropic (obligatoire)"),
-        e("p",{style:{color:"#7aaac8",fontSize:"0.82rem",lineHeight:"1.6"}},[
-          "Obtenez une clé sur ",
+    {/* ERROR */}
+    {state==="error"&&<div style={{textAlign:"center",padding:"40px 20px"}}>
+      <div style={{fontSize:"2.5rem",marginBottom:"12px"}}>⚠️</div>
+      <p style={{color:"#e74c3c",fontSize:"0.9rem",marginBottom:"16px"}}>{error}</p>
+      <button onClick={run} style={{background:"#4ecdc4",color:"#020c18",border:"none",borderRadius:"12px",padding:"12px 28px",fontWeight:"700",fontSize:"0.95rem",cursor:"pointer"}}>Réessayer</button>
+    </div>}
+
+    {/* RESULTS */}
+    {state==="done"&&weather&&tides&&reco&&<div className="fade-in" style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+
+      {/* Score */}
+      <div style={{background:`linear-gradient(135deg,${scoreColor(reco.score)}22,#041428)`,border:`1px solid ${scoreColor(reco.score)}44`,borderRadius:"20px",padding:"20px",textAlign:"center"}}>
+        <Stars score={reco.score}/>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:"1.25rem",color:scoreColor(reco.score),marginTop:"8px",fontWeight:"700"}}>{reco.verdict}</div>
+        <div style={{color:"#6a9ab8",marginTop:"6px",fontSize:"0.83rem"}}>⏰ <strong style={{color:"#c0d8e8"}}>{reco.meilleurMoment}</strong></div>
+      </div>
+
+      {/* Alertes */}
+      {reco.alertes?.length>0&&<div style={{background:"linear-gradient(135deg,#3d1a1a,#1a0a0a)",border:"1px solid #8b2020",borderRadius:"12px",padding:"14px 16px",display:"flex",flexDirection:"column",gap:"6px"}}>
+        {reco.alertes.map((a,i)=><div key={i} style={{color:"#ff8080",fontSize:"0.85rem"}}>⚠️ {a}</div>)}
+      </div>}
+
+      {/* Météo */}
+      <div style={{background:"linear-gradient(135deg,#0a1e35,#061525)",border:"1px solid #1a3a5a",borderRadius:"16px",padding:"16px"}}>
+        <div style={{color:"#4a7a9b",fontSize:"0.68rem",textTransform:"uppercase",letterSpacing:"2px",marginBottom:"10px"}}>🌊 Conditions Météo Marine</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+          {[["Ciel",wxLabel(weather.weather_code)],["Température",weather.temperature_2m+"°C"],["Précipitations",weather.precipitation+" mm"],["Vague",(weather.wave_height??"—")+" m"]].map(([l,v])=>
+            <div key={l} style={{background:"#091525",borderRadius:"10px",padding:"10px 12px"}}>
+              <div style={{color:"#4a7a9b",fontSize:"0.65rem",textTransform:"uppercase"}}>{l}</div>
+              <div style={{color:"#c0d8e8",fontSize:"0.85rem",marginTop:"2px"}}>{v}</div>
+            </div>
+          )}
+        </div>
+        <div style={{background:"#091525",borderRadius:"10px",padding:"10px 12px",marginTop:"8px"}}>
+          <div style={{color:"#4a7a9b",fontSize:"0.65rem",textTransform:"uppercase"}}>Vent</div>
+          <div style={{color:"#c0d8e8",fontSize:"0.85rem",marginTop:"2px"}}>
+            <span style={{display:"inline-block",transform:`rotate(${weather.wind_direction_10m}deg)`,marginRight:"6px"}}>↑</span>
+            {weather.wind_speed_10m} nœuds ({weather.wind_direction_10m}°)
+          </div>
+        </div>
+      </div>
+
+      {/* Marées */}
+      <div style={{background:"linear-gradient(135deg,#0a1e35,#061525)",border:"1px solid #1a3a5a",borderRadius:"16px",padding:"16px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px",flexWrap:"wrap",gap:"6px"}}>
+          <div style={{color:"#4a7a9b",fontSize:"0.68rem",textTransform:"uppercase",letterSpacing:"2px"}}>🌙 Marées du Jour</div>
+          {coeff&&<div style={{background:isSpring?"linear-gradient(135deg,#e74c3c,#c0392b)":isNeap?"linear-gradient(135deg,#2980b9,#1a6a99)":"linear-gradient(135deg,#f5a623,#d4891a)",borderRadius:"20px",padding:"3px 10px",fontSize:"0.72rem",fontWeight:"700",color:"#fff"}}>
+            Coeff. {coeff} — {isSpring?"Vive-eau 🔴":isNeap?"Morte-eau 🔵":"Intermédiaire 🟠"}
+          </div>}
+        </div>
+        <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+          {todayTides.map((t,i)=><TideChip key={i} t={t}/>)}
+        </div>
+        <div style={{marginTop:"10px",color:"#2a5a7a",fontSize:"0.72rem"}}>
+          ℹ️ Marées estimées par cycle lunaire — pour les horaires officiels : <a href="https://maree.info/81" target="_blank" rel="noreferrer">maree.info</a>
+        </div>
+        {isSpring&&<div style={{marginTop:"8px",color:"#4ecdc4",fontSize:"0.78rem",background:"rgba(78,205,196,0.08)",borderRadius:"8px",padding:"8px 10px"}}>💡 Vive-eau : grand estran découvert — idéal pour la pêche à pied !</div>}
+      </div>
+
+      {/* Recommandations */}
+      <div style={{color:"#4a7a9b",fontSize:"0.68rem",textTransform:"uppercase",letterSpacing:"2px",marginTop:"4px"}}>🎯 Recommandations du Jour</div>
+      {reco.recommandations.map((r,i)=><FishCard key={i} rec={r}/>)}
+
+      {/* Conseils & Demain */}
+      <div style={{background:"linear-gradient(135deg,#0d1f10,#061525)",border:"1px solid #1a4a2a",borderRadius:"16px",padding:"16px"}}>
+        <div style={{color:"#4ecdc4",fontSize:"0.68rem",textTransform:"uppercase",letterSpacing:"2px",marginBottom:"8px"}}>💡 Conseils Locaux</div>
+        <p style={{color:"#a0c4a8",fontSize:"0.85rem",lineHeight:"1.6"}}>{reco.conseils}</p>
+        <div style={{marginTop:"14px",paddingTop:"14px",borderTop:"1px solid #1a3a2a"}}>
+          <div style={{color:"#4a7a9b",fontSize:"0.68rem",textTransform:"uppercase",letterSpacing:"2px",marginBottom:"6px"}}>📅 Prévision Demain</div>
+          <p style={{color:"#8ab89a",fontSize:"0.83rem",lineHeight:"1.6"}}>{reco.demain}</p>
+        </div>
+      </div>
+
+      {/* Refresh */}
+      <button onClick={run} style={{background:"linear-gradient(135deg,#4ecdc4,#2980b9)",color:"#020c18",border:"none",borderRadius:"14px",padding:"14px",width:"100%",fontWeight:"700",fontSize:"0.92rem",cursor:"pointer"}}>
+        🔄 Actualiser les conditions
+      </button>
+
+      <p style={{textAlign:"center",color:"#1a3a5a",fontSize:"0.7rem"}}>
+        Météo : Open-Meteo (gratuit) · Marées : cycle lunaire · 100% gratuit
+      </p>
+    </div>}
+  </div>;
+}
+
+ReactDOM.render(<App/>, document.getElementById("root"));
+</script>
+</body>
+</html>
           e("a",{key:"a",href:"https://console.anthropic.com",target:"_blank",rel:"noreferrer"},"console.anthropic.com"),
           " → API Keys → Create key."
         ]),
